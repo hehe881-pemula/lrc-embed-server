@@ -15,17 +15,21 @@ app.post("/embed", upload.fields([
   { name: "lrc", maxCount: 1 }
 ]), (req, res) => {
   try {
-    const audio = req.files.audio[0];
-    const lrc = req.files.lrc[0];
+    const audio = req.files.audio?.[0];
+    const lrc = req.files.lrc?.[0];
+    if (!audio || !lrc) {
+      return res.status(400).send("Missing files");
+    }
 
     const output = `/tmp/${Date.now()}_${audio.originalname}`;
-
-    const lyrics = fs.readFileSync(lrc.path, "utf8")
-      .replace(/"/g, "'"); // cegah error 
+    const lyricsPlain = fs.readFileSync(lrc.path, "utf8")
+      .replace(/\[.*?\]/g, "")   
+      .replace(/\r?\n/g, " ")    
+      .slice(0, 3000);           
 
     const cmd = `
       ffmpeg -y -i "${audio.path}" \
-      -metadata:s:a:0 lyrics="${lyrics}" \
+      -metadata lyrics="${lyricsPlain.replace(/"/g, "'")}" \
       -codec copy \
       "${output}"
     `;
@@ -33,7 +37,7 @@ app.post("/embed", upload.fields([
     exec(cmd, (err, stdout, stderr) => {
       if (err) {
         console.error("FFmpeg error:", stderr);
-        return res.status(500).send("FFmpeg failed");
+        return res.download(audio.path, audio.originalname);
       }
 
       res.download(output, audio.originalname, () => {
@@ -44,7 +48,7 @@ app.post("/embed", upload.fields([
     });
 
   } catch (e) {
-    console.error("Server error:", e);
+    console.error("Server crash:", e);
     res.status(500).send("Server error");
   }
 });
